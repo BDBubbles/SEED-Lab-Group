@@ -1,0 +1,93 @@
+#include <Encoder.h>
+#include <Arduino.h>
+
+Encoder myEnc(2, 3);
+//   avoid using pins with LEDs attached
+
+
+const String p1 = " ";
+const double enc2Rad = 509.296;
+double rads;
+double oldrads = 0;
+double radPerSec;
+double voltage;
+double desiredPosition;
+
+String dataIn;
+
+const int motorControl = 4; //controls both motor channels
+const int voltSign1 = 7; //controls direction or sign of voltage of motor 1
+const int voltSign2 = 8; //controls direction or sign of voltage of motor 2
+const int motorVolt1 = 9; //controls voltage supplied to motor 1 (ON or OFF)
+const int motorVolt2 = 10; //controls voltage supplied to motor 2 (ON or OFF)
+const int statusFlag = 12; //status flag indicator (low indicates fault)
+double desiredAngle;
+double Vo = 0;
+double pwm = 0;
+int dir = 1;
+int count = 0;
+bool dataRead = 0;
+unsigned long t2;
+void setup() {
+  pinMode(motorControl, OUTPUT);
+  pinMode(voltSign1, OUTPUT);
+  pinMode(voltSign2, OUTPUT);
+  pinMode(motorVolt1, OUTPUT);
+  pinMode(motorVolt2, OUTPUT);
+  pinMode(statusFlag, INPUT);
+  digitalWrite(motorControl, HIGH);
+ 
+  Serial.begin(115200);
+}
+
+long oldPosition = -999;
+double data;
+
+void loop() {
+  //unsigned long t1=millis();
+  if(dataRead){
+    Serial.println(dataIn);
+    data = dataIn.toDouble();
+    if(data == 0 && count != 0){
+      data = 4;
+    }
+    desiredAngle = HALF_PI * data;
+    dataRead= false;
+    count++;
+  }
+  long newPosition = myEnc.read();
+  if (newPosition != oldPosition) {
+    oldPosition = newPosition;
+    //Serial.println(newPosition);
+  }
+  /*int numRot = newPosition/3200;
+  if (newPosition > 3200) {
+    newPosition = newPosition - (3200*numRot);
+  }*/
+    rads = double(newPosition)/enc2Rad;
+    //rads = abs(rads);
+    Vo = 15*(desiredAngle-rads) + 2*(20/1000)*(desiredAngle-rads);
+    pwm = (Vo*255)/7.2;
+    if(pwm > 255){
+      pwm=255;
+    }else if(pwm<-255){
+      pwm=-255;
+    }
+  if(Vo > 0){
+    dir = 0;
+  }else{
+    dir = 1;
+  }
+  digitalWrite(voltSign1, dir);
+  analogWrite(motorVolt1,abs(pwm));
+  //t2=millis();
+  //delay(t2-t1);
+}
+
+void serialEvent(){
+  if(Serial.available()>0){
+    dataIn = Serial.readStringUntil('\n');
+    dataRead = true;
+    }
+    Serial.flush();
+  }
