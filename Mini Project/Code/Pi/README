@@ -1,0 +1,4 @@
+Aruco detection scheme explanation
+For our Raspberry Pi Python code, we implemented an aruco detection scheme that identifies the markers via the OpenCV and Aruco marker detection libraries.
+After detecting the markers, we calculate the center x and y pixel values of the marker, and determine which of the 4 quadrants the marker is in. From that point, we
+send the Arduino the desired angle in radians.
