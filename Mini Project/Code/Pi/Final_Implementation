@@ -1,0 +1,127 @@
+import numpy as np
+import cv2 as cv
+import cv2.aruco as arc
+import time
+import picamera
+import math
+import time
+import serial
+import math
+import adafruit_character_lcd.character_lcd_rgb_i2c as character_lcd
+import board
+
+lcd_col = 16
+lcd_row = 2
+
+i2c = board.I2C()
+lcd = character_lcd.Character_LCD_RGB_I2C(i2c, lcd_col, lcd_row)
+
+lcd.clear()
+
+#bus = smbus.SMBus(1)
+
+ser = serial.Serial('/dev/ttyACM0',115200)
+time.sleep(3)
+
+cpt = cv.VideoCapture(0)
+
+#Arduino address
+#address = 0x04
+
+"""def writeNumber(value, offset):
+    float(value)
+    bus.write_byte_data(address, offset, value)
+    return -1
+"""
+#Detect markers parameters
+dictionary = arc.getPredefinedDictionary(arc.DICT_6X6_250)
+param = arc.DetectorParameters_create()
+def readFrom():
+    while(ser.in_waiting>0):
+        try:
+            line = ser.readline().decode('utf-8').rstrip()
+            return (line)
+        except:
+            print("He Disconnected")
+    
+quadrant = 0
+
+if not cpt.isOpened():
+    exit()
+    
+#Begin stream
+while True:
+    ret, frame = cpt.read()
+    
+    if not ret:
+        break
+    
+    #Convert to grayscale
+    
+    gray = cv.cvtColor(frame, cv.COLOR_BGR2GRAY)
+    #cv.imshow('frame', gray)
+    if cv.waitKey(1) == ord('q'):
+        break
+    
+    #Begin marker detection
+    corners, ids, rejectedImgPoints = arc.detectMarkers(gray, dictionary, parameters=param)
+    
+    #Draw marker graphics
+    frame_markers = arc.drawDetectedMarkers(gray, corners, ids)
+    
+    #Find center point and calculate phi
+    if len(corners) >= 1:
+        centerX = corners[0][0][0][0] + corners[0][0][1][0] + corners[0][0][2][0]+ corners[0][0][3][0]
+        centerX = centerX*0.25
+        
+        centerY = corners[0][0][0][1] + corners[0][0][1][1] + corners[0][0][2][1] + corners[0][0][3][1]
+        centerY = centerY*0.25
+        
+        #writeNumber((phi * 3.14156)/180, 0)
+        
+        #Calculate center of image
+        middleX = frame.shape[1]/2
+        middleY = frame.shape[0]/2
+        
+        #Big-boi if-block to find which quadrant it's in
+        if centerX > middleX and centerY < middleY:
+            quadrant = (0)
+            disp = "pi/2"
+        elif centerX < middleX and centerY < middleY:
+            quadrant = (1)
+            disp = "pi"
+        elif centerX < middleX and centerY > middleY:
+            quadrant = (2)
+            disp = "3pi/2"
+        else:
+            quadrant = (3)
+            disp = "2pi"
+            
+        quadrant = str(quadrant)
+        ser.write(quadrant.encode())
+        
+        mess = readFrom()
+        #quadrant = float(quadrant)
+        if mess != None:
+            mess = float(mess)
+            mess = mess *(3.14156)/2
+        print(mess)
+        #time.sleep(0.1)
+        
+            
+        #display to LCD
+        lcd.color=[0,100,0]
+        mess = str(mess)
+        lcd.message = mess
+        time.sleep(1)
+        #time.sleep(1)
+        lcd.clear()
+        
+    #Display image with marker frames
+    cv.imshow('markers', frame_markers)
+    
+
+cpt.release()
+cv.waitKey(0)
+cv.destroyAllWindows()
+
