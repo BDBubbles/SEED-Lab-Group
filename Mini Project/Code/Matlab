@@ -1,0 +1,31 @@
+%% Runmotorsim.m
+% This script runs a simulation of a motor with bearing friction and plots the
+% results
+%
+% required file: motorsim.slx
+%
+%% Define motor parameters
+Ra=1; % armaature resistance [Ohms]
+Kt=.5; % motor torque constant [Nm/A]
+Ke=.5; % back emf constant [Vs/rad]
+J=.05; % Load inertia [Nm^2]
+b=.5; % damping [Nm/s]
+
+%% Run a Simulation
+open_system('PIcontroller')
+
+% run the simulation
+out=sim('PIcontroller');
+
+%% A Plot of the results
+figure
+plot(out.Position)
+
+title("Output: Step Response Plot") %title
+ylabel("Position") %new y label
+
+plot(out.DesiredPosition)
+title("Output: Desired Position") %title
+ylabel("Desired Position")%new y label
+
+%%*Note: Did not perform the experimental data
