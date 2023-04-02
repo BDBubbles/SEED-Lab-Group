@@ -6,6 +6,7 @@ Your team should be organizing your code and other files in a common repository 
 - Well organized record of all models created in Simulink.
 - Well organized Arduino sketches with detailed comments.
 - Well organized Python code with detailed comments.
+
 (They don’t necessarily have to be organized into folders by language - it could be by task if that makes more sense.)
 Your github should also have a project board that describes what tasks were assigned and who was responsible.
 
