@@ -1,0 +1,45 @@
+import numpy as np
+import cv2 as cv
+import cv2.aruco as arc
+import time
+import picamera
+import math
+import time
+import serial
+import math
+import adafruit_character_lcd.character_lcd_rgb_i2c as character_lcd
+import board
+
+lcd_col = 16
+lcd_row = 2
+
+i2c = board.I2C()
+lcd = character_lcd.Character_LCD_RGB_I2C(i2c, lcd_col, lcd_row)
+
+lcd.clear()
+
+#bus = smbus.SMBus(1)
+
+#ser = serial.Serial('/dev/ttyACM0',115200)
+time.sleep(3)
+
+cpt = cv.VideoCapture(0)
+
+#Arduino address
+#address = 0x04
+
+"""def writeNumber(value, offset):
+    float(value)
+    bus.write_byte_data(address, offset, value)
+    return -1
+"""
+#Detect markers parameters
+dictionary = arc.getPredefinedDictionary(arc.DICT_6X6_250)
+param = arc.DetectorParameters_create()
+def readFrom():
+    while(ser.in_waiting>0):
+        try:
+            line = ser.readline().decode('utf-8').rstrip()
+            return (line)
+        except:
+            print("He Disconnected")
