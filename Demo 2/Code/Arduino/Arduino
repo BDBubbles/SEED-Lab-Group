@@ -1,1 +1,323 @@
-code here
+/* Encoder Library - Basic Example
+ * http://www.pjrc.com/teensy/td_libs_Encoder.html
+ *
+ * This example code is in the public domain.
+ */
+#include <Encoder.h>
+#include <arduino.h>
+
+
+// Change these two numbers to the pins connected to your encoder.
+//   Best Performance: both pins have interrupt capability
+//   Good Performance: only the first pin has interrupt capability
+//   Low Performance:  neither pin has interrupt capability
+Encoder knobRight(3, 6);
+Encoder knobLeft(2, 5);
+//   avoid using pins with LEDs attached
+
+unsigned long secondDelay; // timer for angular rotation of wheels
+unsigned long secondStart = 0;
+unsigned long start,Stop = 0; // timer for integral gain error
+unsigned long calculateDelay; // timer for position in x-y grid
+unsigned long calculateTime;
+
+const String p1 = " ";
+const double enc2Rad = 509.296;
+
+const double r = 0.260; // radius of wheel
+const double d = 1.146; // distance between wheels
+const double Cro = 10; // C for position
+const double Cphi = 10; // C for inner control phi
+const double Kp = 2.256; // C for phi
+const double Ki = .0583; //C for phi
+const double Kp_ro = 5; // C for phi
+const double Ki_ro = 1; //C for phi
+
+double tempRotL = 0;
+double tempRotR = 0;
+double velocityR = 0;
+double velocityL = 0;
+double deltaT;
+double xNew=0;
+double xOld=0;
+double yNew=0;
+double yOld=0;
+double thetaNew=0;
+double thetaOld=0;
+
+double V1 = 0; // voltage applied to R wheel
+double V2 = 0; // voltage applied to L wheel
+double Vbar = 0; // added voltage -> speed or ro
+double Vdelta; // difference of voltage -> angle or phi
+double thetaDotR = 0; // rotational velocity of R wheel
+double thetaR; // angle in radians of R wheel
+double oldthetaR; // old angle to calulate thetadotR
+double thetaDotL = 0; // rotational velocity of L wheel
+double thetaL; // angle in radians of L wheel
+double oldthetaL; // old angle to calulate thetadotL
+double roDot = 30; // forward velocity
+double phiDot = 0; // rotational velocity
+double phi = 0; // current angle
+double ro = 0; // current position
+double phiD = 0;
+double roD = 0;
+double roDesired = 0;    // + 0 -> 0.5 based on desired distance
+double phiDesired = 0;
+double lastError = 0;
+const int motorControl = 4; //controls both motor channels
+const int voltSignR = 7; //controls direction or sign of voltage of motor 1
+const int voltSignL = 8; //controls direction or sign of voltage of motor 2
+const int motorVoltR = 9; //controls voltage supplied to motor 1 (ON or OFF)
+const int motorVoltL = 10; //controls voltage supplied to motor 2 (ON or OFF)
+const int statusFlag = 12; //status flag indicator (low indicates fault)
+double integralGain = 0;
+double pwmR = 0;
+double pwmL = 0;
+double error = 0;
+int dirL = 1;
+int dirR = 1;
+
+bool isTurned = false;
+bool isMoved = false;
+String data;
+
+void setup() {
+  pinMode(motorControl, OUTPUT);
+  pinMode(voltSignR, OUTPUT);
+  pinMode(voltSignL, OUTPUT);
+  pinMode(motorVoltR, OUTPUT);
+  pinMode(motorVoltL, OUTPUT);
+  pinMode(statusFlag, INPUT);
+  digitalWrite(motorControl, HIGH);
+  
+  Serial.begin(115200);
+
+  secondStart = millis();
+  calculateTime = millis();
+}
+
+long oldPositionR  = -999; // initialize 
+long oldPositionL  = -999; // initialize 
+// (R->1) and (L->2)
+enum robotState {
+    searching,
+    reading,
+    rotating,
+    moving    
+};
+robotState currentState = searching; // set starting state
+
+void loop() {
+  switch (currentState) {
+    case searching:
+      search();
+      if (Serial.available() > 0) {
+        reset();
+        currentState = reading;
+      }
+    break;
+    
+   case reading:
+      data = Serial.readStringUntil(' ');
+      phiDesired = data.toDouble();
+      //phiDesired -= PI/6;
+      data = Serial.readStringUntil('\n');
+      roDesired = data.toDouble();
+      roDesired += 0.25;      
+      Serial.flush();
+      delay(10);
+      currentState = rotating;
+    break;
+
+    case rotating:
+      if(abs(phiDesired - phi) >= 0.015){
+        rotate();
+      } else {
+        reset();
+        currentState = moving;
+        delay(10);
+      }
+    break;
+
+    case moving:
+      if(abs(roDesired - ro) >= 0.015){
+        move(); 
+      } else {
+        reset();
+        currentState = searching; 
+        delay(10);     
+      }
+    break;  
+    
+    default:
+      search();
+    break;
+  }
+}
+void search() {
+  digitalWrite(voltSignL, 0); // set direction L
+  digitalWrite(voltSignR, 1); // set direction R
+  analogWrite(motorVoltL, 65); // set motor L
+  analogWrite(motorVoltR, 65); // set motor R
+  delay(600);
+  analogWrite(motorVoltL, 0); // set motor L
+  analogWrite(motorVoltR, 0); // set motor R
+  delay(850);
+}
+
+void rotate() {
+  start = millis();
+  long newPositionR = knobRight.read(); // right wheel encoder
+  long newPositionL = knobLeft.read(); // left wheel encoder
+  if (newPositionL != oldPositionL || newPositionR != oldPositionR) {
+    oldPositionL = newPositionL;
+    oldPositionR = newPositionR;
+  }
+    error = phiDesired - phi;
+    integralGain = integralGain + (lastError*Ki*((Stop - start)/1000.0));
+    phiD = error * Kp + integralGain;
+    lastError = error;
+ 
+    
+    Vbar = 0;
+    Vdelta = (phiD - phiDot) * Cphi;
+    
+    V1 = (Vbar + Vdelta)/2.0; // get V1 from Vbar and Vdelta
+    V2 = (Vbar - Vdelta)/2.0; // get V2 from Vbar and Vdelta
+  
+    if (V1 < 0) {
+      dirR = 1;
+    } else {
+      dirR = 0;
+    }
+    if (V2 < 0) {
+      dirL = 1;
+    } else {
+      dirL = 0;
+    }
+    pwmR = (abs(V1)/7.2)*255.0; // set R wheel pwm using voltage
+    pwmL = (abs(V2)/7.2)*255.0; // set L wheel pwm using voltage
+    
+    if (pwmR > 80) {
+      pwmR = 80;
+    }
+    if (pwmL > 80) {
+      pwmL = 80;
+    }
+  phiDot = r*(thetaDotR-thetaDotL)/d;  
+  thetaR = double(newPositionR)/enc2Rad;
+  thetaL = double(newPositionL)/enc2Rad; 
+  phi = (thetaR - thetaL) * r / d;
+   
+  secondDelay = millis();
+  if ((secondDelay - secondStart) > 20) {
+    thetaDotR = (thetaR-oldthetaR)/(double(secondDelay-secondStart)/1000.0);
+    thetaDotL = (thetaL-oldthetaL)/(double(secondDelay-secondStart)/1000.0);
+    oldthetaR = thetaR;
+    oldthetaL = thetaL;
+    secondStart = millis();
+  }
+  isTurned = false;
+  //Power motor
+  digitalWrite(voltSignL, dirL); // set direction L
+  analogWrite(motorVoltL, pwmL); // set motor L
+  digitalWrite(voltSignR, dirR); // set direction R
+  analogWrite(motorVoltR, pwmR); // set motor R
+  Stop = millis();
+}
+
+void reset() {
+  digitalWrite(voltSignL, dirL); // set direction L
+  analogWrite(motorVoltL, 0); // set motor L
+  digitalWrite(voltSignR, dirR); // set direction R
+  analogWrite(motorVoltR, 0); // set motor R
+  knobRight.write(0);
+  knobLeft.write(0);
+  delay(750);
+  integralGain = 0;
+  isTurned = true;
+}
+
+void move() {
+  long newPositionR = knobRight.read(); // right wheel encoder
+  long newPositionL = knobLeft.read(); // left wheel encoder
+  if (newPositionL != oldPositionL || newPositionR != oldPositionR) {
+    oldPositionL = newPositionL;
+    oldPositionR = newPositionR;
+  }
+    error = roDesired - ro;
+    integralGain = integralGain + (lastError*Ki_ro*((Stop - start)/1000.0)); 
+    roD = error * Kp_ro + integralGain;
+    lastError = error;
+    
+    Vbar = (roD - roDot) * Cro;
+    Vdelta = 0;
+
+    V1 = (Vbar + Vdelta)/2.0; // get V1 from Vbar and Vdelta
+    V2 = (Vbar - Vdelta)/2.0; // get V2 from Vbar and Vdelta
+    //Serial.println(V1+p1+V2);  // test print
+
+    //Directions are wrong(will rotate)
+    if (V1 < 0) {
+      dirR = 0;
+    } else {
+      dirR = 1;
+    }
+    if (V2 < 0) {
+      dirL = 0;
+    } else {
+      dirL = 1;
+    }
+    pwmR = (abs(V1)/7.2)*255.0; // set R wheel pwm using voltage
+    pwmL = (abs(V2)/7.2)*255.0; // set L wheel pwm using voltage
+    pwmR += 30;
+    pwmL += 35;
+    if (pwmR > 100) {
+      pwmR = 100;
+    }
+    if (pwmL > 100) {
+      pwmL = 100;
+    }
+  
+    roDot = r*(thetaDotR + thetaDotL)/2;
+
+
+  thetaR = double(newPositionR)/enc2Rad;
+  thetaL = double(newPositionL)/enc2Rad; 
+  double distance_right = (double(newPositionR)/3200.0)*(2*PI*r);
+  double distance_left = (double(newPositionL)/3200.0)*(2*PI*r);
+  ro = (distance_right + distance_left)/2 ;
+
+  secondDelay = millis();
+  if ((secondDelay - secondStart) > 20) {
+    thetaDotR = (thetaR-oldthetaR)/(double(secondDelay-secondStart)/1000.0);
+    thetaDotL = (thetaL-oldthetaL)/(double(secondDelay-secondStart)/1000.0);
+    oldthetaR = thetaR;
+    oldthetaL = thetaL;
+    secondStart = millis();
+  }
+
+  /* math to compute location in an x-y grid ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    calculateDelay = millis();
+  if ((calculateDelay - calculateTime) > 500) {
+    deltaT = calculateDelay-calculateTime; // set change in time
+    velocityL = r*((newPositionL-tempRotL)/(enc2Rad*deltaT)); // left wheel velocity
+    velocityR = r*((newPositionR-tempRotR)/(enc2Rad*deltaT)); // right wheel velocity
+    xNew = xOld + deltaT*(((cos(thetaOld))*(velocityL+velocityR))/2.0); // new x position
+    yNew = yOld + deltaT*(((sin(thetaOld))*(velocityL+velocityR))/2.0); // new y position
+    thetaNew = thetaOld + deltaT*((velocityL-velocityR)/d); // new angle of rotation
+    tempRotR = newPositionR; // set new values to old
+    tempRotL = newPositionL;
+    xOld = xNew;
+    yOld = yNew;
+    thetaOld = thetaNew;
+    calculateTime = millis();
+  } //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+
+  //Power motor
+  digitalWrite(voltSignL, dirL); // set direction L
+  analogWrite(motorVoltL, pwmL); // set motor L
+  digitalWrite(voltSignR, dirR); // set direction R
+  analogWrite(motorVoltR, pwmR); // set motor R  
+}
+
