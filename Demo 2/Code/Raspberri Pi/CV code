@@ -10,6 +10,15 @@ import math
 import adafruit_character_lcd.character_lcd_rgb_i2c as character_lcd
 import board
 
+#camera settings
+"""
+camera = PiCamera(resolution=(1280,720), framerate = 30)
+camera.exposure_mode = 'antishake'
+camera.shutter_speed = 500
+"""
+
+globalFlag = False
+
 lcd_col = 16
 lcd_row = 2
 
@@ -20,7 +29,7 @@ lcd.clear()
 
 #bus = smbus.SMBus(1)
 
-#ser = serial.Serial('/dev/ttyACM0',115200)
+ser = serial.Serial('/dev/ttyACM0',115200)
 time.sleep(3)
 
 cpt = cv.VideoCapture(0)
@@ -43,3 +52,83 @@ def readFrom():
             return (line)
         except:
             print("He Disconnected")
+    
+
+
+if not cpt.isOpened():
+    exit()
+      
+
+#Begin stream
+while True:
+    ret, frame = cpt.read()
+    
+    if not ret:
+        break
+    
+    #Convert to grayscale
+    
+    gray = cv.cvtColor(frame, cv.COLOR_BGR2GRAY)
+    #cv.imshow('frame', gray)
+    if cv.waitKey(1) == ord('q'):
+        break
+    
+    #Begin marker detection
+    corners, ids, rejectedImgPoints = arc.detectMarkers(gray, dictionary, parameters=param)
+    
+    #Draw marker graphics
+    frame_markers = arc.drawDetectedMarkers(gray, corners, ids)
+    
+    #Find center point and calculate phi
+    if len(corners) >= 1:
+        
+        #Center of marker's x pixel value
+        centerX = corners[0][0][0][0] + corners[0][0][1][0] + corners[0][0][2][0]+ corners[0][0][3][0]
+        centerX = centerX*0.25
+        
+        #Calculate horizontal angle
+        ratioX = 53.5/frame.shape[1]
+        phi = (ratioX*centerX)-26.75
+        phi = phi*(-1)
+        
+        #Convert to radians
+        phi = phi*3.1415926/180
+        
+        #Calculate vertical size in image pixels
+        height = corners[0][0][3][1] - corners[0][0][0][1]
+        
+        """Equation for conversion from pixel height to distance:
+            y = -2.791*ln(x)+15.541
+        """
+           
+        #Convert pixels to distance and send to Arduino
+        rho = -2.971*math.log(height*2)+15.541 #Edit height based off of height of orignal marker compared to used marker 
+        
+        #display to LCD
+        """
+        lcd.color=[0,100,0]
+        lcd.message = str(rho)
+        """
+        #time.sleep(1)
+        
+        #Send phi first, then sleep and send distance
+        message = str(phi) + " " + str(rho)
+        message = message.encode()
+        ser.write(message)
+        print(phi)
+        while(not globalFlag):
+            flag = readFrom()
+            globalFlag = bool(flag)
+        
+        
+        """time.sleep(0.1)
+        ser.write(str(rho).encode())
+        """
+        
+    #Display image with marker frames
+    cv.imshow('markers', frame_markers)
+    
+
+cpt.release()
+cv.waitKey(0)
+cv.destroyAllWindows()
